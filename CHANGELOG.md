@@ -19,15 +19,20 @@ RoundForge uses semantic versioning for source milestones. The API remains pre-1
 - winner validation against the active round snapshot
 - map voting with vote replacement, player removal, locking, reset, and deterministic tie hooks
 - nine core lifecycle invariants
-- structured QA reporter
+- structured QA reporter with checkpoint traces and optional seed metadata
 - reusable deterministic `TestHarness`
-- regression scenarios for normal rounds, late joins, leaves, and voting
+- regression scenarios for normal rounds, late joins, leaves across lifecycle states, winner leave, and voting
 - 25-round repeated lifecycle regression scenario
 - standalone Lune test runner
 - GitHub Actions CI for deterministic regression testing
 - runnable Roblox last-player-standing integration example
 - `Version` module and `VERSION` source marker
-- project documentation, contribution guide, security policy, code of conduct, roadmap, and agent-workflow notes
+- project documentation, contribution guide, security policy, code of conduct, roadmap, maintainer record, issue templates, PR checklist, and agent-workflow notes
+
+### Verified QA
+
+- GitHub Actions deterministic regression: **920 checks, 168 checkpoints, 0 failures**
+- scenarios include basic lifecycle, late-join promotion, Intermission/Preparing/Playing leave handling, late-join active-minimum race, winner-leave cleanup, 25 repeated rounds, and map voting
 
 ### Fixed
 
