@@ -43,9 +43,9 @@ RoundForge makes those questions explicit instead of hiding them inside one larg
 - vote replacement and removal
 - lockable voting and deterministic tie-resolution hook
 - lifecycle invariants
-- structured scenario reports
+- structured scenario reports with checkpoint traces and optional seed metadata
 - reusable deterministic `TestHarness`
-- regression suite including 25 consecutive round cycles
+- regression suite including 25 consecutive round cycles and join/leave edge cases
 - standalone Luau test runner with Lune
 - GitHub Actions CI
 - runnable Roblox last-player-standing integration example
@@ -96,6 +96,17 @@ Your game owns the scheduler and game-specific rules. RoundForge owns lifecycle 
 
 See [`examples/last-player-standing`](examples/last-player-standing) for a complete Roblox-side example.
 
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [v0.1 API reference](docs/api-reference.md)
+- [Architecture](docs/architecture.md)
+- [Deterministic testing](docs/testing.md)
+- [Agent workflows](docs/agent-workflows.md)
+- [Roadmap](ROADMAP.md)
+- [Maintainers](MAINTAINERS.md)
+- [Contributing](CONTRIBUTING.md)
+
 ## Deterministic testing
 
 The repository regression suite runs the real core modules with an injected fake clock.
@@ -104,7 +115,7 @@ The repository regression suite runs the real core modules with an injected fake
 lune run tests/run
 ```
 
-The suite covers the normal lifecycle, late joins, leaves, minimum-player collapse, map voting, cleanup, and 25 repeated rounds without real-time waits.
+The suite covers the normal lifecycle, late joins, leaves during multiple lifecycle states, minimum-player collapse, a late-join race, winner-leave cleanup, map voting, and 25 repeated rounds without real-time waits.
 
 A typical scenario can also be authored directly:
 
@@ -150,6 +161,7 @@ examples/
   last-player-standing/
 
 docs/
+  api-reference.md
   architecture.md
   getting-started.md
   testing.md
