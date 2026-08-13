@@ -1,27 +1,46 @@
 # Changelog
 
-All notable changes to RoundForge will be documented here.
+All notable changes to RoundForge are documented here.
 
-The project follows semantic versioning once releases begin. During the pre-release phase, public APIs may still change.
+RoundForge uses semantic versioning for source milestones. The API remains pre-1.0 and may change as real integrations provide feedback.
 
-## Unreleased
+## [0.1.0] - 2026-08-13
 
 ### Added
 
-- initial project documentation and governance files
-- explicit `StateMachine` primitive
+- explicit `Waiting → Intermission → Preparing → Playing → Finished` state machine
+- server-owned participant registry
+- locked participant snapshots
+- late-join tracking that excludes new players from an active round
+- deterministic participant ID snapshots
+- active-participant minimum handling for leave/collapse cases
+- injectable authoritative clock
 - deterministic `FakeClock`
-- participant snapshot and late-join tracking
-- deterministic map voting service
-- initial round lifecycle service
-- core invariant checks
+- winner validation against the active round snapshot
+- map voting with vote replacement, player removal, locking, reset, and deterministic tie hooks
+- nine core lifecycle invariants
 - structured QA reporter
-- last-player-standing integration example
+- reusable deterministic `TestHarness`
+- regression scenarios for normal rounds, late joins, leaves, and voting
+- 25-round repeated lifecycle regression scenario
+- standalone Lune test runner
+- GitHub Actions CI for deterministic regression testing
+- runnable Roblox last-player-standing integration example
+- `Version` module and `VERSION` source marker
+- project documentation, contribution guide, security policy, code of conduct, roadmap, and agent-workflow notes
 
-### Planned next
+### Fixed
 
-- scenario-driven `TestHarness`
-- repeated-round regression suite
-- arena registry and spawn allocation interface
-- Roblox Player adapter
-- snapshot replication helper
+- late joiners can no longer keep an active round alive after the locked participants drop below the configured minimum
+- repeated vote changes no longer risk stale vote accounting
+- waiting-state cleanup is now checked as an explicit invariant
+
+## Unreleased
+
+### Planned
+
+- arena registry and spawn allocation
+- reusable map-selection pipeline
+- Roblox `Player` adapter
+- versioned state replication
+- expanded integration and property/stress testing
