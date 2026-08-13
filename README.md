@@ -1,95 +1,200 @@
 # RoundForge
 
+[![CI](https://github.com/Abdulh3/RoundForge/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdulh3/RoundForge/actions/workflows/ci.yml)
+![Luau](https://img.shields.io/badge/language-Luau-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/source-v0.1.0-orange)
+
 **Server-authoritative round framework and deterministic QA toolkit for Roblox/Luau.**
 
-> Status: early development / pre-release. RoundForge is being built in public and is not yet recommended for production games.
+RoundForge is an open-source toolkit for multiplayer Roblox experiences that run in repeated rounds: survival, tag, hot potato, minigames, social-deduction-style lobbies, last-player-standing modes, and similar games.
 
-RoundForge is an open-source toolkit for building multiplayer round-based Roblox experiences without rewriting the same lifecycle code for every game. It focuses on the parts that are easy to get subtly wrong: participant snapshots, late joins, leaves, map voting, state transitions, deterministic timers, cleanup, and repeatable QA.
+It focuses on the lifecycle code that is simple to sketch but easy to get subtly wrong in production: participant snapshots, late joins, leaves, authoritative deadlines, state transitions, winners, cleanup, map voting, and repeatable regression testing.
 
-The project is also designed to be **agent-friendly**. Its state model and test reports are intentionally structured so human maintainers, CI systems, and coding agents can inspect the same facts instead of relying on ad-hoc console output.
+RoundForge is also intentionally **agent-friendly**. Important state is exposed as structured snapshots, tests use deterministic time, and QA results are plain data that a human, CI job, or coding agent can inspect.
 
-## Goals
+> **Project status:** v0.1.0 source milestone. The deterministic core is usable for experimentation and integration work, but the public API is still pre-1.0 and may evolve.
 
-- Server-authoritative round lifecycle
-- Explicit, validated match state transitions
-- Snapshot-based participant handling
-- Late-join and leave safety
-- Deterministic map voting and tie breaking
-- Arena/spawn adapters without forcing one map layout
-- Deterministic clocks for fast tests
-- Invariant checks for deadlocks, stale participants, invalid winners, and cleanup leaks
-- Machine-readable QA reports for CI and AI-assisted maintenance
-- Small composable modules instead of a single framework megascript
+## Why RoundForge?
 
-## Non-goals
+A typical round game eventually needs to answer questions like:
 
-RoundForge is not a full game template, monetization system, UI framework, datastore wrapper, combat framework, or anti-cheat product. It should make the lifecycle of round-based games reliable while leaving game-specific mechanics to the developer.
+- Who exactly belongs to this round?
+- What happens if somebody joins after the round has started?
+- Can a late joiner accidentally keep a dying round alive?
+- What happens if the current winner or participant leaves?
+- Did the previous round actually clean itself up?
+- Can voting state leak into the next match?
+- Can tests advance a 30-second timer without really waiting 30 seconds?
 
-## Example
+RoundForge makes those questions explicit instead of hiding them inside one large game script.
 
-```lua
-local RoundForge = require(path.to.RoundForge)
+## v0.1 features
 
-local clock = RoundForge.FakeClock.new()
-local round = RoundForge.RoundService.new({
-    clock = clock,
-    minimumPlayers = 2,
-    intermissionSeconds = 10,
-})
+- explicit finite-state round lifecycle
+- server-owned participant registry
+- locked participant snapshots at round start
+- late-join queue that cannot enter the active snapshot
+- leave handling based on active participants, not unrelated connected players
+- authoritative injectable clock
+- deterministic `FakeClock`
+- winner validation
+- map voting with one vote per participant
+- vote replacement and removal
+- lockable voting and deterministic tie-resolution hook
+- lifecycle invariants
+- structured scenario reports
+- reusable deterministic `TestHarness`
+- regression suite including 25 consecutive round cycles
+- standalone Luau test runner with Lune
+- GitHub Actions CI
+- runnable Roblox last-player-standing integration example
 
-round:registerPlayer({ id = 101, name = "A" })
-round:registerPlayer({ id = 102, name = "B" })
+## Lifecycle
 
-round:start()
-clock:advance(10)
-
-local snapshot = round:getSnapshot()
-print(snapshot.state)
+```text
+Waiting
+   ↓ enough connected players
+Intermission
+   ↓ deadline
+Preparing  ← participant snapshot locks here
+   ↓ deadline
+Playing
+   ↓ game-specific finish condition
+Finished
+   ↓ presentation deadline
+Waiting    ← round state is fully cleaned here
 ```
 
-The public API is still evolving. See [`ROADMAP.md`](ROADMAP.md) for the path to the first stable release.
+A player who joins after the snapshot locks remains connected but is classified as a late joiner until the next round.
+
+## Quick example
+
+```lua
+local RoundForge = require(ServerScriptService.RoundForge)
+
+local clock = {
+    now = function()
+        return workspace:GetServerTimeNow()
+    end,
+}
+
+local rounds = RoundForge.RoundService.new(clock, {
+    minimumPlayers = 2,
+    intermissionSeconds = 10,
+    preparingSeconds = 3,
+    finishedSeconds = 5,
+})
+
+rounds:registerPlayer({ id = 101, name = "Alpha" })
+rounds:registerPlayer({ id = 102, name = "Bravo" })
+
+rounds:tick() -- Waiting -> Intermission
+```
+
+Your game owns the scheduler and game-specific rules. RoundForge owns lifecycle truth.
+
+See [`examples/last-player-standing`](examples/last-player-standing) for a complete Roblox-side example.
+
+## Deterministic testing
+
+The repository regression suite runs the real core modules with an injected fake clock.
+
+```bash
+lune run tests/run
+```
+
+The suite covers the normal lifecycle, late joins, leaves, minimum-player collapse, map voting, cleanup, and 25 repeated rounds without real-time waits.
+
+A typical scenario can also be authored directly:
+
+```lua
+local clock = RoundForge.FakeClock.new()
+local rounds = RoundForge.RoundService.new(clock)
+local harness = RoundForge.TestHarness.new("late-join", rounds, clock)
+
+harness:connect(1)
+harness:connect(2)
+harness:runToState("Playing")
+harness:connect(3)
+harness:checkpoint("player-3-is-late")
+
+RoundForge.Reporter.assertPassed(harness:report())
+```
+
+Read [`docs/testing.md`](docs/testing.md) for the invariant model and CI workflow.
 
 ## Project structure
 
 ```text
 src/
-  shared/       reusable primitives and types
-  server/       round, participant, voting, arena and replication services
-  testing/      fake clock, invariants, harness and structured reporter
-examples/       small reference integrations
-docs/           architecture and guides
+  init.luau
+  shared/
+    StateMachine.luau
+    Version.luau
+  server/
+    ParticipantService.luau
+    RoundService.luau
+    MapVoteService.luau
+  testing/
+    FakeClock.luau
+    Invariants.luau
+    Reporter.luau
+    TestHarness.luau
+    RegressionSuite.luau
+
+tests/
+  run.luau
+
+examples/
+  last-player-standing/
+
+docs/
+  architecture.md
+  getting-started.md
+  testing.md
+  agent-workflows.md
 ```
 
 ## Design principles
 
-1. **The server owns truth.** Clients can request actions, not decide match outcomes.
-2. **Time is injectable.** Core logic should not depend on real wall-clock waiting in tests.
-3. **State is inspectable.** Important decisions should be representable as snapshots and events.
-4. **Cleanup is part of correctness.** A round is not finished until temporary state is gone.
-5. **Game-specific mechanics stay outside the core.** RoundForge coordinates the lifecycle; your game defines what happens during `Playing`.
-6. **Agents get structured evidence.** Test output should make failures easy to locate and reproduce.
+1. **The server owns truth.** Clients may request actions, but participant membership, deadlines, states, and winners are authoritative.
+2. **Time is injectable.** Core tests should not depend on `task.wait()` or real wall-clock delays.
+3. **Round membership is a snapshot.** Connected players and current participants are different concepts.
+4. **Cleanup is correctness.** `Finished` is not the end of the lifecycle; stale state must be removed before the next round.
+5. **Game mechanics stay outside the core.** RoundForge coordinates *when* a round plays and *who* is in it. Your game decides how somebody wins or loses.
+6. **State should be inspectable.** Snapshots and reports are intentionally easy to reason about and serialize.
+7. **Automation should test the same source used in production.** Standalone tests inject dependencies instead of maintaining a second round implementation.
 
-## Planned first milestone
+## What RoundForge is not
 
-The first milestone focuses on a usable vertical slice:
+RoundForge is not a combat framework, UI framework, datastore wrapper, anti-cheat system, monetization package, or complete game template.
 
-- finite-state round loop
-- participant snapshot and late-join queue
-- leave handling
-- map vote service
-- fake clock
-- invariant runner
-- structured test report
-- two reference modes: last-player-standing and hot-potato-style lifecycle
+Those systems can integrate with RoundForge without becoming part of the round lifecycle core.
+
+## Roadmap
+
+The next milestones focus on:
+
+- arena registry and spawn allocation
+- reusable map-selection pipeline
+- Roblox `Player` adapter
+- versioned snapshot replication
+- stronger property/stress scenarios
+- package/release automation
+
+See [`ROADMAP.md`](ROADMAP.md).
 
 ## Contributing
 
-Contributions are welcome while the API is taking shape. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Bug reports and design discussions are especially useful during the pre-release phase.
+Contributions, bug reports, test cases, and API-design feedback are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+The most useful early contributions are small reproducible lifecycle scenarios: a join/leave ordering, reset bug, voting edge case, or invariant that RoundForge should guarantee.
 
 ## Security
 
-Please do not disclose security-sensitive issues publicly before reading [`SECURITY.md`](SECURITY.md).
+For security-sensitive reports, read [`SECURITY.md`](SECURITY.md) before opening a public issue.
 
 ## License
 
-RoundForge is licensed under the [MIT License](LICENSE).
+RoundForge is available under the [MIT License](LICENSE).
