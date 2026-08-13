@@ -44,23 +44,45 @@ local function harnessDependencies(dependencies: Dependencies)
     }
 end
 
-local function basicRound(dependencies: Dependencies)
+local function createScenario(
+    dependencies: Dependencies,
+    name: string,
+    config: any?,
+    seed: number?
+)
     local clock = dependencies.FakeClock.new()
     local round = dependencies.RoundService.new(
         clock,
+        config or {
+            minimumPlayers = 2,
+            intermissionSeconds = 1,
+            preparingSeconds = 1,
+            finishedSeconds = 1,
+        },
+        roundDependencies(dependencies)
+    )
+    local harness = dependencies.TestHarness.new(
+        name,
+        round,
+        clock,
+        harnessDependencies(dependencies),
+        seed
+    )
+
+    return clock, round, harness
+end
+
+local function basicRound(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "basic-round",
         {
             minimumPlayers = 2,
             intermissionSeconds = 10,
             preparingSeconds = 3,
             finishedSeconds = 2,
         },
-        roundDependencies(dependencies)
-    )
-    local harness = dependencies.TestHarness.new(
-        "basic-round",
-        round,
-        clock,
-        harnessDependencies(dependencies)
+        101
     )
 
     harness:checkpoint("initial")
@@ -94,26 +116,17 @@ local function basicRound(dependencies: Dependencies)
         "round residue remained after Finished -> Waiting"
     )
 
-    return harness:report()
+    local report = harness:report()
+    assert(report.seed == 101, "scenario seed metadata was not preserved")
+    assert(#report.trace == report.checkpoints, "report trace must include every checkpoint")
+
+    return report
 end
 
 local function lateJoinLifecycle(dependencies: Dependencies)
-    local clock = dependencies.FakeClock.new()
-    local round = dependencies.RoundService.new(
-        clock,
-        {
-            minimumPlayers = 2,
-            intermissionSeconds = 2,
-            preparingSeconds = 1,
-            finishedSeconds = 1,
-        },
-        roundDependencies(dependencies)
-    )
-    local harness = dependencies.TestHarness.new(
-        "late-join-lifecycle",
-        round,
-        clock,
-        harnessDependencies(dependencies)
+    local _, round, harness = createScenario(
+        dependencies,
+        "late-join-lifecycle"
     )
 
     harness:connect(1)
@@ -148,23 +161,79 @@ local function lateJoinLifecycle(dependencies: Dependencies)
     return harness:report()
 end
 
-local function leaveLifecycle(dependencies: Dependencies)
-    local clock = dependencies.FakeClock.new()
-    local round = dependencies.RoundService.new(
-        clock,
-        {
-            minimumPlayers = 2,
-            intermissionSeconds = 1,
-            preparingSeconds = 1,
-            finishedSeconds = 1,
-        },
-        roundDependencies(dependencies)
+local function leaveDuringIntermission(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "leave-during-intermission"
     )
-    local harness = dependencies.TestHarness.new(
-        "leave-lifecycle",
-        round,
-        clock,
-        harnessDependencies(dependencies)
+
+    harness:connect(1)
+    harness:connect(2)
+    harness:tick()
+    local intermission = harness:checkpoint("intermission")
+    harness:expect(
+        "entered-intermission",
+        intermission.state == "Intermission",
+        "expected Intermission after minimum players connected"
+    )
+
+    harness:disconnect(2)
+    local waiting = harness:checkpoint("leave-below-minimum")
+    harness:expect(
+        "intermission-leave-aborts",
+        waiting.state == "Waiting"
+            and waiting.roundLocked == false
+            and waiting.deadline == nil,
+        "Intermission did not abort cleanly after dropping below minimum"
+    )
+
+    return harness:report()
+end
+
+local function leaveDuringPreparing(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "leave-during-preparing"
+    )
+
+    harness:connect(1)
+    harness:connect(2)
+    harness:connect(3)
+    harness:tick()
+    harness:advanceToDeadline()
+
+    local preparing = harness:checkpoint("preparing-with-three")
+    harness:expect(
+        "entered-preparing",
+        preparing.state == "Preparing" and preparing.roundCount == 3,
+        "expected three locked participants during Preparing"
+    )
+
+    harness:disconnect(3)
+    local stillPreparing = harness:checkpoint("one-leaves-preparing")
+    harness:expect(
+        "preparing-continues-at-minimum",
+        stillPreparing.state == "Preparing" and stillPreparing.roundCount == 2,
+        "Preparing should continue while the active snapshot still meets minimum"
+    )
+
+    harness:disconnect(2)
+    local waiting = harness:checkpoint("preparing-collapses")
+    harness:expect(
+        "preparing-below-minimum-aborts",
+        waiting.state == "Waiting"
+            and waiting.roundLocked == false
+            and waiting.roundCount == 0,
+        "Preparing did not abort after active participants dropped below minimum"
+    )
+
+    return harness:report()
+end
+
+local function leaveDuringPlaying(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "leave-during-playing"
     )
 
     harness:connect(1)
@@ -183,7 +252,7 @@ local function leaveLifecycle(dependencies: Dependencies)
     harness:disconnect(2)
     local collapsed = harness:checkpoint("minimum-collapse")
     harness:expect(
-        "minimum-collapse-aborts-safely",
+        "playing-minimum-collapse-aborts",
         collapsed.state == "Waiting"
             and collapsed.roundLocked == false
             and collapsed.roundCount == 0,
@@ -193,23 +262,74 @@ local function leaveLifecycle(dependencies: Dependencies)
     return harness:report()
 end
 
-local function repeatedRounds(dependencies: Dependencies, iterations: number)
-    local clock = dependencies.FakeClock.new()
-    local round = dependencies.RoundService.new(
-        clock,
-        {
-            minimumPlayers = 2,
-            intermissionSeconds = 1,
-            preparingSeconds = 1,
-            finishedSeconds = 1,
-        },
-        roundDependencies(dependencies)
+local function lateJoinCannotKeepRoundAlive(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "late-join-cannot-keep-round-alive"
     )
-    local harness = dependencies.TestHarness.new(
+
+    harness:connect(1)
+    harness:connect(2)
+    harness:runToState("Playing")
+    harness:connect(3, "Late")
+    harness:checkpoint("late-player-connected")
+
+    -- At this point two people will remain connected after participant 2 leaves,
+    -- but only one belongs to the locked active snapshot. Connected-count logic
+    -- would incorrectly keep the round alive; RoundForge must use roundCount().
+    harness:disconnect(2)
+
+    local waiting = harness:checkpoint("active-snapshot-below-minimum")
+    harness:expect(
+        "late-join-does-not-satisfy-active-minimum",
+        waiting.state == "Waiting"
+            and waiting.connectedCount == 2
+            and waiting.roundCount == 0,
+        "late joiner incorrectly kept the locked active round alive"
+    )
+
+    return harness:report()
+end
+
+local function winnerLeavesFinished(dependencies: Dependencies)
+    local _, _, harness = createScenario(
+        dependencies,
+        "winner-leaves-finished"
+    )
+
+    harness:connect(1)
+    harness:connect(2)
+    harness:runToState("Playing")
+    harness:finish(1)
+    harness:checkpoint("finished-with-winner")
+
+    harness:disconnect(1)
+    local afterLeave = harness:checkpoint("winner-left-finished")
+    harness:expect(
+        "winner-reference-cleared",
+        afterLeave.state == "Finished" and afterLeave.winnerId == nil,
+        "leaving winner left a stale winner reference"
+    )
+
+    harness:advanceToDeadline()
+    local waiting = harness:checkpoint("finished-cleanup")
+    harness:expect(
+        "winner-leave-still-cleans-round",
+        waiting.state == "Waiting"
+            and waiting.roundLocked == false
+            and waiting.roundCount == 0,
+        "round failed to clean up after the winner left during Finished"
+    )
+
+    return harness:report()
+end
+
+local function repeatedRounds(dependencies: Dependencies, iterations: number)
+    local _, _, harness = createScenario(
+        dependencies,
         "repeated-rounds-" .. tostring(iterations),
-        round,
-        clock,
-        harnessDependencies(dependencies)
+        nil,
+        2501
     )
 
     harness:connect(1)
@@ -281,6 +401,11 @@ local function mapVoting(dependencies: Dependencies)
         "valid vote was rejected"
     )
     check(
+        "reject-invalid-option",
+        not vote:vote(3, "MissingMap"),
+        "vote accepted an option outside the configured set"
+    )
+    check(
         "replace-own-vote",
         vote:vote(1, "Reactor"),
         "vote replacement failed"
@@ -323,13 +448,16 @@ local function mapVoting(dependencies: Dependencies)
     vote:reset({ "A", "B" })
     check(
         "reset-clears-state",
-        not vote:isLocked() and next(vote:getVotes()) == nil,
-        "reset left votes or lock state behind"
+        not vote:isLocked()
+            and next(vote:getVotes()) == nil
+            and #vote:getOptions() == 2,
+        "reset left votes, lock state, or stale options behind"
     )
 
     return dependencies.Reporter.fromCheckpoints(
         "map-voting",
-        checkpoints
+        checkpoints,
+        3001
     )
 end
 
@@ -339,7 +467,11 @@ function RegressionSuite.runAll(dependencyOverrides: Dependencies?)
     local reports = {
         basicRound(dependencies),
         lateJoinLifecycle(dependencies),
-        leaveLifecycle(dependencies),
+        leaveDuringIntermission(dependencies),
+        leaveDuringPreparing(dependencies),
+        leaveDuringPlaying(dependencies),
+        lateJoinCannotKeepRoundAlive(dependencies),
+        winnerLeavesFinished(dependencies),
         repeatedRounds(dependencies, 25),
         mapVoting(dependencies),
     }
