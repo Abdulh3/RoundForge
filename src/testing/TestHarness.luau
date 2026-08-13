@@ -12,6 +12,7 @@ export type TestHarness = typeof(setmetatable({} :: {
     _round: any,
     _clock: any,
     _scenario: string,
+    _seed: number?,
     _checkpoints: { any },
     _invariants: any,
     _reporter: any,
@@ -34,7 +35,8 @@ function TestHarness.new(
     scenario: string,
     roundService: any,
     clock: any,
-    dependencyOverrides: Dependencies?
+    dependencyOverrides: Dependencies?,
+    seed: number?
 ): TestHarness
     assert(scenario ~= "", "scenario name must not be empty")
     assert(roundService ~= nil, "roundService is required")
@@ -46,6 +48,7 @@ function TestHarness.new(
         _round = roundService,
         _clock = clock,
         _scenario = scenario,
+        _seed = seed,
         _checkpoints = {},
         _invariants = dependencies.Invariants,
         _reporter = dependencies.Reporter,
@@ -149,7 +152,11 @@ function TestHarness:getCheckpoints(): { any }
 end
 
 function TestHarness:report()
-    return self._reporter.fromCheckpoints(self._scenario, self._checkpoints)
+    return self._reporter.fromCheckpoints(
+        self._scenario,
+        self._checkpoints,
+        self._seed
+    )
 end
 
 return TestHarness
