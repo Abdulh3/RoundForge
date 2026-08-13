@@ -10,21 +10,40 @@ export type CheckDetail = {
     state: string?,
 }
 
+export type TraceEntry = {
+    label: string,
+    at: number?,
+    snapshot: any,
+}
+
 export type Report = {
     scenario: string,
     result: "passed" | "failed",
     checks: number,
     failures: number,
     checkpoints: number,
+    seed: number?,
     details: { CheckDetail },
+    trace: { TraceEntry },
 }
 
-function Reporter.fromCheckpoints(scenario: string, checkpoints: { any }): Report
+function Reporter.fromCheckpoints(
+    scenario: string,
+    checkpoints: { any },
+    seed: number?
+): Report
     local failures = 0
     local checkCount = 0
     local details = {}
+    local trace = {}
 
     for _, checkpoint in checkpoints do
+        table.insert(trace, {
+            label = checkpoint.label,
+            at = checkpoint.at,
+            snapshot = checkpoint.snapshot,
+        })
+
         for _, check in checkpoint.checks do
             checkCount += 1
 
@@ -48,7 +67,9 @@ function Reporter.fromCheckpoints(scenario: string, checkpoints: { any }): Repor
         checks = checkCount,
         failures = failures,
         checkpoints = #checkpoints,
+        seed = seed,
         details = details,
+        trace = trace,
     }
 end
 
