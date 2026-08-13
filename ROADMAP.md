@@ -1,59 +1,71 @@
 # RoundForge Roadmap
 
-RoundForge is being developed in small, testable milestones. Dates are intentionally not promised until the core API stabilizes.
+RoundForge is developed in small, testable milestones. Dates are intentionally not promised until the API has real external usage.
 
-## v0.1 — Deterministic round core
+## v0.1 — Deterministic round core ✅
 
 Goal: prove the lifecycle and QA model with a small usable API.
 
-- [ ] finite-state round service
-- [ ] participant snapshot and late-join queue
-- [ ] player-leave handling
-- [ ] deterministic/injectable clock
-- [ ] invariant runner
-- [ ] structured JSON-like QA report
-- [ ] minimal last-player-standing example
-- [ ] lifecycle regression tests
+- [x] finite-state round service
+- [x] participant snapshot and late-join queue
+- [x] player-leave handling
+- [x] deterministic/injectable clock
+- [x] invariant runner
+- [x] structured machine-readable QA report
+- [x] reusable deterministic `TestHarness`
+- [x] runnable last-player-standing example
+- [x] lifecycle regression suite
+- [x] 25-round cleanup regression scenario
+- [x] standalone Lune runner
+- [x] GitHub Actions CI
 
 ## v0.2 — Voting and arenas
 
-- [ ] map vote service
-- [ ] deterministic tie resolution hooks
+Voting primitives landed early in v0.1 because they are useful for lifecycle regression coverage.
+
+- [x] map vote service
+- [x] deterministic tie-resolution hook
+- [x] vote replacement/removal/reset coverage
 - [ ] arena registry
 - [ ] spawn allocation interface
 - [ ] invalid arena filtering
 - [ ] anti-repeat map selection helper
 - [ ] hot-potato-style lifecycle example
 
+Tracking: issue #3.
+
 ## v0.3 — Roblox integration layer
 
-- [ ] Player adapter for Roblox `Player` instances
+- [ ] `Player` adapter for Roblox `Player` instances
 - [ ] server snapshot replication helper
 - [ ] late-join spectator adapter
 - [ ] lifecycle events/signals
 - [ ] Studio-friendly installation guide
 - [ ] example UI integration
 
-## v0.4 — Agent-friendly QA
+Tracking: issue #4.
+
+## v0.4 — Agent-friendly QA expansion
+
+The first deterministic/agent-readable QA layer shipped in v0.1. This milestone expands it rather than starting it from scratch.
 
 - [ ] scenario DSL
-- [ ] multi-round stress harness
-- [ ] reproducible seeded randomness
-- [ ] invariant catalog
-- [ ] machine-readable failure artifacts
-- [ ] CI example
-- [ ] agent workflow guide with bounded repair loops
+- [ ] reproducible seeded randomness helper
+- [ ] property/stress scenarios beyond fixed cases
+- [ ] machine-readable failure artifact export
+- [ ] CI artifact example
+- [ ] bounded agent repair-loop example
 
 ## v1.0 — Stable core
 
 Criteria before 1.0:
 
-- public API documented
-- semantic versioning policy
+- public API fully documented
+- semantic versioning policy finalized
 - reliable repeated-round cleanup
-- reference integrations tested
+- reference integrations tested in real Roblox projects
 - migration notes for breaking pre-release changes
-- real external usage and feedback
+- real external usage and maintainer feedback
 
 ## Future ideas
 
