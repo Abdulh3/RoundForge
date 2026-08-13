@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a reusable addition to RoundForge
+title: "[Feature]: "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Reusable problem
+      description: What recurring round-game or maintainer problem should RoundForge solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest reusable API or invariant that would address the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Could this stay in game-specific code instead of the framework core?
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: Deterministic validation
+      description: What scenario or invariant could prove the feature works and cleans up correctly?
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This proposal is reusable across more than one specific game mechanic.
+          required: true
+        - label: I searched existing issues and the roadmap for the same idea.
+          required: true
