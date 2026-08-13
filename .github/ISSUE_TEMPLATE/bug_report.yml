@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible RoundForge lifecycle, voting, testing, or integration problem
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve RoundForge. For security-sensitive reports, stop here and follow `SECURITY.md` instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: RoundForge version or commit
+      description: For example `0.1.0` or a commit SHA.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Minimal scenario
+      description: Describe the smallest join/leave/state/vote sequence that reproduces the problem.
+      placeholder: |
+        1. Connect players 1 and 2
+        2. Advance to Playing
+        3. Connect player 3 as a late joiner
+        4. Disconnect player 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What lifecycle invariant or API behavior did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the failing state, assertion, CI output, or structured report when possible.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Deterministic Lune test
+        - Roblox Studio
+        - Live Roblox server
+        - Other Luau environment
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction code or report
+      description: Paste a small TestHarness scenario or relevant structured report if available.
+      render: luau
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: This report does not contain private credentials, tokens, or an undisclosed security issue.
+          required: true
