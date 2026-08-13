@@ -15,6 +15,18 @@ RoundForge is also intentionally **agent-friendly**. Important state is exposed 
 
 > **Project status:** v0.1.0 source milestone. The deterministic core is usable for experimentation and integration work, but the public API is still pre-1.0 and may evolve.
 
+## Verified v0.1 QA
+
+The v0.1 deterministic regression suite is green in GitHub Actions:
+
+```text
+920 checks
+168 checkpoints
+0 failures
+```
+
+Coverage includes normal lifecycle, late joins, leaves during multiple states, minimum-player collapse, the late-join/active-minimum race, winner-leave cleanup, voting behavior, and 25 consecutive rounds with cleanup checks.
+
 ## Why RoundForge?
 
 A typical round game eventually needs to answer questions like:
