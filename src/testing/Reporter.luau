@@ -2,46 +2,111 @@
 
 local Reporter = {}
 
+export type CheckDetail = {
+    name: string,
+    passed: boolean,
+    message: string?,
+    checkpoint: string?,
+    state: string?,
+}
+
 export type Report = {
+    scenario: string,
     result: "passed" | "failed",
     checks: number,
     failures: number,
-    details: { any },
+    checkpoints: number,
+    details: { CheckDetail },
 }
 
-function Reporter.fromChecks(checks: { any }): Report
+function Reporter.fromCheckpoints(scenario: string, checkpoints: { any }): Report
     local failures = 0
+    local checkCount = 0
     local details = {}
 
-    for _, check in checks do
-        if check.passed ~= true then
-            failures += 1
-        end
+    for _, checkpoint in checkpoints do
+        for _, check in checkpoint.checks do
+            checkCount += 1
 
-        table.insert(details, {
-            name = check.name,
-            passed = check.passed == true,
-            message = check.message,
-        })
+            if check.passed ~= true then
+                failures += 1
+            end
+
+            table.insert(details, {
+                name = check.name,
+                passed = check.passed == true,
+                message = check.message,
+                checkpoint = checkpoint.label,
+                state = checkpoint.snapshot and checkpoint.snapshot.state or nil,
+            })
+        end
     end
 
     return {
+        scenario = scenario,
         result = if failures == 0 then "passed" else "failed",
-        checks = #checks,
+        checks = checkCount,
         failures = failures,
+        checkpoints = #checkpoints,
         details = details,
     }
 end
 
-function Reporter.assertPassed(report: Report)
+function Reporter.combine(name: string, reports: { Report })
+    local failures = 0
+    local checks = 0
+    local checkpoints = 0
+
+    for _, report in reports do
+        failures += report.failures
+        checks += report.checks
+        checkpoints += report.checkpoints
+    end
+
+    return {
+        scenario = name,
+        result = if failures == 0 then "passed" else "failed",
+        checks = checks,
+        failures = failures,
+        checkpoints = checkpoints,
+        reports = reports,
+    }
+end
+
+function Reporter.assertPassed(report: any)
     if report.result == "passed" then
         return
     end
 
     local messages = {}
-    for _, detail in report.details do
-        if not detail.passed then
-            table.insert(messages, string.format("%s: %s", detail.name, detail.message or "failed"))
+
+    if report.details ~= nil then
+        for _, detail in report.details do
+            if not detail.passed then
+                table.insert(
+                    messages,
+                    string.format(
+                        "[%s / %s] %s: %s",
+                        detail.checkpoint or "?",
+                        detail.state or "?",
+                        detail.name,
+                        detail.message or "failed"
+                    )
+                )
+            end
+        end
+    elseif report.reports ~= nil then
+        for _, child in report.reports do
+            if child.result ~= "passed" then
+                table.insert(
+                    messages,
+                    string.format(
+                        "%s: %d failure(s)",
+                        child.scenario,
+                        child.failures
+                    )
+                )
+            end
         end
     end
 
