@@ -21,8 +21,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Lune
-        run: cargo install lune --locked
+      - name: Install Lune 0.10.5
+        run: cargo install lune --version 0.10.5 --locked
 
       - name: Run deterministic regression suite
         run: lune run tests/run
