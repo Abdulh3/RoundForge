@@ -1,8 +1,5 @@
 --!strict
 
-local StateMachine = require(script.Parent.Parent.shared.StateMachine)
-local ParticipantService = require(script.Parent.ParticipantService)
-
 export type Clock = {
     now: (self: any) -> number,
 }
@@ -12,6 +9,11 @@ export type Config = {
     intermissionSeconds: number?,
     preparingSeconds: number?,
     finishedSeconds: number?,
+}
+
+export type Dependencies = {
+    StateMachine: any,
+    ParticipantService: any,
 }
 
 local TRANSITIONS = {
@@ -27,8 +29,8 @@ RoundService.__index = RoundService
 
 export type RoundService = typeof(setmetatable({} :: {
     _clock: Clock,
-    _participants: ParticipantService.ParticipantService,
-    _machine: StateMachine.StateMachine,
+    _participants: any,
+    _machine: any,
     _minimumPlayers: number,
     _intermissionSeconds: number,
     _preparingSeconds: number,
@@ -38,24 +40,61 @@ export type RoundService = typeof(setmetatable({} :: {
     _winnerId: (number | string)?,
 }, RoundService))
 
-function RoundService.new(clock: Clock, config: Config?): RoundService
+local function resolveDependencies(overrides: Dependencies?): Dependencies
+    if overrides ~= nil then
+        assert(overrides.StateMachine ~= nil, "dependencies.StateMachine is required")
+        assert(overrides.ParticipantService ~= nil, "dependencies.ParticipantService is required")
+        return overrides
+    end
+
+    -- Roblox path. Standalone deterministic tests inject the same modules
+    -- explicitly, so the production source remains the source under test.
+    return {
+        StateMachine = require(script.Parent.Parent.shared.StateMachine),
+        ParticipantService = require(script.Parent.ParticipantService),
+    }
+end
+
+local function assertFiniteNonNegative(value: number, name: string)
+    assert(
+        value >= 0 and value < math.huge,
+        name .. " must be a finite non-negative number"
+    )
+end
+
+function RoundService.new(clock: Clock, config: Config?, dependencyOverrides: Dependencies?): RoundService
+    assert(clock ~= nil and type(clock.now) == "function", "clock with now() is required")
+
+    local dependencies = resolveDependencies(dependencyOverrides)
     local resolved = config or {}
+    local minimumPlayers = resolved.minimumPlayers or 2
+    local intermissionSeconds = resolved.intermissionSeconds or 10
+    local preparingSeconds = resolved.preparingSeconds or 3
+    local finishedSeconds = resolved.finishedSeconds or 5
+
+    assert(
+        minimumPlayers >= 1 and minimumPlayers % 1 == 0,
+        "minimumPlayers must be a positive integer"
+    )
+    assertFiniteNonNegative(intermissionSeconds, "intermissionSeconds")
+    assertFiniteNonNegative(preparingSeconds, "preparingSeconds")
+    assertFiniteNonNegative(finishedSeconds, "finishedSeconds")
 
     return setmetatable({
         _clock = clock,
-        _participants = ParticipantService.new(),
-        _machine = StateMachine.new("Waiting", TRANSITIONS),
-        _minimumPlayers = resolved.minimumPlayers or 2,
-        _intermissionSeconds = resolved.intermissionSeconds or 10,
-        _preparingSeconds = resolved.preparingSeconds or 3,
-        _finishedSeconds = resolved.finishedSeconds or 5,
+        _participants = dependencies.ParticipantService.new(),
+        _machine = dependencies.StateMachine.new("Waiting", TRANSITIONS),
+        _minimumPlayers = minimumPlayers,
+        _intermissionSeconds = intermissionSeconds,
+        _preparingSeconds = preparingSeconds,
+        _finishedSeconds = finishedSeconds,
         _deadline = nil,
         _roundId = 0,
         _winnerId = nil,
     }, RoundService)
 end
 
-function RoundService:registerPlayer(participant: ParticipantService.Participant)
+function RoundService:registerPlayer(participant: any)
     self._participants:connect(participant)
 end
 
@@ -66,9 +105,25 @@ function RoundService:unregisterPlayer(id: number | string)
         self._winnerId = nil
     end
 
-    if self._machine:getState() ~= "Waiting" and self._participants:connectedCount() < self._minimumPlayers then
-        self:_abortToWaiting()
+    local state = self._machine:getState()
+
+    if state == "Intermission" then
+        if self._participants:connectedCount() < self._minimumPlayers then
+            self:_abortToWaiting()
+        end
+    elseif state == "Preparing" or state == "Playing" then
+        if self._participants:roundCount() < self._minimumPlayers then
+            self:_abortToWaiting()
+        end
     end
+end
+
+function RoundService:start()
+    self:tick()
+end
+
+function RoundService:reset()
+    self:_abortToWaiting()
 end
 
 function RoundService:_setDeadline(seconds: number?)
@@ -77,6 +132,7 @@ end
 
 function RoundService:_abortToWaiting()
     local state = self._machine:getState()
+
     if state ~= "Waiting" then
         self._machine:transition("Waiting")
     end
@@ -92,7 +148,13 @@ function RoundService:_enterIntermission()
 end
 
 function RoundService:_enterPreparing()
-    self._participants:lockRound()
+    local participantSnapshot = self._participants:lockRound()
+
+    if #participantSnapshot < self._minimumPlayers then
+        self:_abortToWaiting()
+        return
+    end
+
     self._roundId += 1
     self._winnerId = nil
     self._machine:transition("Preparing")
@@ -105,10 +167,16 @@ function RoundService:_enterPlaying()
 end
 
 function RoundService:finish(winnerId: (number | string)?)
-    assert(self._machine:getState() == "Playing", "finish can only be called while Playing")
+    assert(
+        self._machine:getState() == "Playing",
+        "finish can only be called while Playing"
+    )
 
     if winnerId ~= nil then
-        assert(self._participants:isRoundParticipant(winnerId), "winner must belong to the round participant snapshot")
+        assert(
+            self._participants:isRoundParticipant(winnerId),
+            "winner must belong to the active round participant snapshot"
+        )
     end
 
     self._winnerId = winnerId
@@ -126,9 +194,17 @@ function RoundService:tick()
         return
     end
 
-    if self._participants:connectedCount() < self._minimumPlayers then
-        self:_abortToWaiting()
-        return
+    if state == "Intermission" then
+        if self._participants:connectedCount() < self._minimumPlayers then
+            self:_abortToWaiting()
+            return
+        end
+    elseif state == "Preparing" or state == "Playing" then
+        -- Late joiners must never keep a dying locked round alive.
+        if self._participants:roundCount() < self._minimumPlayers then
+            self:_abortToWaiting()
+            return
+        end
     end
 
     if self._deadline == nil or self._clock:now() < self._deadline then
@@ -138,11 +214,7 @@ function RoundService:tick()
     if state == "Intermission" then
         self:_enterPreparing()
     elseif state == "Preparing" then
-        if self._participants:roundCount() < self._minimumPlayers then
-            self:_abortToWaiting()
-        else
-            self:_enterPlaying()
-        end
+        self:_enterPlaying()
     elseif state == "Finished" then
         self:_abortToWaiting()
     end
@@ -151,6 +223,7 @@ end
 function RoundService:getSnapshot()
     local state = self._machine:getState()
     local remaining = nil
+
     if self._deadline ~= nil then
         remaining = math.max(0, self._deadline - self._clock:now())
     end
@@ -160,15 +233,20 @@ function RoundService:getSnapshot()
         state = state,
         deadline = self._deadline,
         remaining = remaining,
+        minimumPlayers = self._minimumPlayers,
         connectedCount = self._participants:connectedCount(),
         roundCount = self._participants:roundCount(),
+        lateJoinerCount = self._participants:lateJoinerCount(),
         roundLocked = self._participants:isRoundLocked(),
         winnerId = self._winnerId,
+        connectedIds = self._participants:getConnectedIds(),
+        roundParticipantIds = self._participants:getRoundParticipantIds(),
+        lateJoinerIds = self._participants:getLateJoinerIds(),
         history = self._machine:getHistory(),
     }
 end
 
-function RoundService:getParticipants(): ParticipantService.ParticipantService
+function RoundService:getParticipants(): any
     return self._participants
 end
 
